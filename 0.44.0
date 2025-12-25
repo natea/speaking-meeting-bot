@@ -1,0 +1,7 @@
+Collecting llvmlite
+  Downloading llvmlite-0.46.0-cp313-cp313-win_amd64.whl.metadata (5.1 kB)
+Downloading llvmlite-0.46.0-cp313-cp313-win_amd64.whl (38.1 MB)
+   ---------------------------------------- 38.1/38.1 MB 11.9 MB/s  0:00:03
+
+Installing collected packages: llvmlite
+Successfully installed llvmlite-0.46.0

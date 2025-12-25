@@ -38,6 +38,11 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             meeting_details[4] if len(meeting_details) > 4 else "16khz"
         )
 
+        # Get full persona data (stored at index 5)
+        resolved_persona_data = (
+            meeting_details[5] if len(meeting_details) > 5 else {"name": persona_name}
+        )
+
         logger.info(
             f"Retrieved meeting details for {client_id}: {meeting_url}, {persona_name}, {meetingbaas_bot_id}, {enable_tools}, {streaming_audio_frequency}"
         )
@@ -51,11 +56,12 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
         else:
             # Start Pipecat process if not already running
             pipecat_websocket_url = f"ws://localhost:7014/pipecat/{client_id}"
+            logger.info(f"Starting new Pipecat process for client {client_id} (previous process not running)")
             process = start_pipecat_process(
                 client_id=client_id,
                 websocket_url=pipecat_websocket_url,
                 meeting_url=meeting_url,
-                persona_data={"name": persona_name},
+                persona_data=resolved_persona_data,  # Use full persona data
                 streaming_audio_frequency=streaming_audio_frequency,
                 enable_tools=enable_tools,
                 api_key="",

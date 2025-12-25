@@ -210,12 +210,14 @@ async def join_meeting(request: BotRequest, client_request: Request):
     logger.info(f"  Is Temporary: {resolved_persona_data.get('is_temporary')}")
 
     # Store all relevant details in MEETING_DETAILS dictionary
+    # Note: Index 5 stores the full resolved_persona_data for use by websocket handler
     MEETING_DETAILS[bot_client_id] = (
         request.meeting_url,
         resolved_persona_data.get("name", persona_name_for_logging),  # Use display name from resolved data
         None,  # meetingbaas_bot_id, will be set after creation
         request.enable_tools,
-        streaming_audio_frequency
+        streaming_audio_frequency,
+        resolved_persona_data,  # Full persona data for Pipecat subprocess
     )
 
     # Get image URL: Prioritize request.bot_image > persona_data.image > generate_image (if custom prompt and details derived)

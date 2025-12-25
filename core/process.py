@@ -14,7 +14,7 @@ PIPECAT_PROCESSES: Dict[str, subprocess.Popen] = {}
 
 def stream_output(pipe, prefix):
     for line in iter(pipe.readline, ''):
-        print(f"{prefix} {line.strip()}")
+        print(f"{prefix} {line.strip()}", flush=True)
 
 def start_pipecat_process(
     client_id: str,
@@ -48,16 +48,20 @@ def start_pipecat_process(
     persona_data_json = json.dumps(persona_data)
 
     # Construct the command to run the meetingbaas.py script
+    # Use absolute path to avoid issues with spaces in directory names
     script_path = os.path.join(
         os.path.dirname(__file__), "..", "scripts", "meetingbaas.py"
     )
+    script_path = os.path.abspath(script_path)
 
     # Use the persona's display name directly from persona_data
     display_name = persona_data.get("name", "Unknown Bot")
 
     # Build command with all parameters
+    # Use -u flag for unbuffered output to ensure logs are captured immediately
     command = [
         sys.executable,
+        "-u",  # Unbuffered stdout/stderr
         script_path,
         "--client-id",
         client_id,
@@ -81,13 +85,28 @@ def start_pipecat_process(
     if meetingbaas_bot_id:
         command.extend(["--meetingbaas-bot-id", meetingbaas_bot_id])
 
+    # Get project root directory (parent of core/)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # Create environment with PYTHONPATH set to project root
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    if existing_pythonpath:
+        env["PYTHONPATH"] = f"{project_root}{os.pathsep}{existing_pythonpath}"
+    else:
+        env["PYTHONPATH"] = project_root
+
+    logger.info(f"Subprocess PYTHONPATH: {env['PYTHONPATH']}")
+    logger.info(f"Subprocess command: {' '.join(command[:3])}...")  # Log first 3 args
+
     # Start the process
     process = subprocess.Popen(
         command,
-        env=os.environ.copy(),  # Copy the current environment
+        env=env,  # Use modified environment with PYTHONPATH
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,  # Capture output as text
+        cwd=project_root,  # Set working directory to project root
     )
 
     # Start threads to print output

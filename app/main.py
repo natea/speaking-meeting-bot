@@ -253,23 +253,46 @@ def start_server(host: str = "0.0.0.0", port: int = 7014, local_dev: bool = Fals
     NGROK_URL_INDEX = 0
 
     if local_dev:
-        print("\n⚠️ Starting in local development mode")
+        print("\n[WARNING] Starting in local development mode")
         # Cache the ngrok URLs at server start
         NGROK_URLS = load_ngrok_urls()
 
         if NGROK_URLS:
-            print(f"✅ {len(NGROK_URLS)} Bot(s) available from Ngrok")
+            print(f"[OK] {len(NGROK_URLS)} Bot(s) available from Ngrok")
             for i, url in enumerate(NGROK_URLS):
                 print(f"  Bot {i + 1}: {url}")
         else:
             print(
-                "⚠️ No ngrok URLs configured. Using auto-detection for WebSocket URLs."
+                "[WARNING] No ngrok URLs configured. Using auto-detection for WebSocket URLs."
             )
         print("\n")
 
     logger.info(f"Starting WebSocket server on {host}:{server_port}")
 
     # Pass the local_dev flag as a command-line argument to the uvicorn process
+    # #region agent log
+    log_path = r"c:\Users\kmond\meeting bot\speaking-meeting-bot\.cursor\debug.log"
+    import json as _json
+    import time as _time
+    try:
+        with open(log_path, "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "K",
+                "location": "app/main.py:build_args",
+                "message": "Building uvicorn command args",
+                "data": {
+                    "sys_executable": sys.executable,
+                    "cwd": os.getcwd(),
+                    "app_module_exists": os.path.exists("app/__init__.py")
+                },
+                "timestamp": int(_time.time() * 1000)
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
+    
     args = [
         sys.executable,
         "-m",
@@ -292,9 +315,44 @@ def start_server(host: str = "0.0.0.0", port: int = 7014, local_dev: bool = Fals
         if os.path.exists(".local_dev_mode"):
             os.remove(".local_dev_mode")
 
-    # Use os.execv to replace the current process with uvicorn
-    # This way all arguments are directly passed to uvicorn
-    os.execv(sys.executable, args)
+    # Import and run uvicorn directly instead of spawning a subprocess
+    # This avoids path resolution issues with os.execv on Windows
+    import uvicorn
+    
+    # #region agent log
+    log_path = r"c:\Users\kmond\meeting bot\speaking-meeting-bot\.cursor\debug.log"
+    import json as _json
+    import time as _time
+    try:
+        with open(log_path, "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "M",
+                "location": "app/main.py:start_uvicorn",
+                "message": "Starting uvicorn directly",
+                "data": {
+                    "host": host,
+                    "port": server_port,
+                    "local_dev": local_dev,
+                    "cwd": os.getcwd()
+                },
+                "timestamp": int(_time.time() * 1000)
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
+    
+    # Import the app
+    from app import app
+    
+    # Run uvicorn directly
+    uvicorn.run(
+        app,
+        host=host,
+        port=server_port,
+        reload=local_dev,
+    )
 
 
 if __name__ == "__main__":
