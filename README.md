@@ -62,9 +62,10 @@ The project follows a streamlined API-first approach with:
    - The WebSocket URL is determined automatically (see WebSocket URL Resolution below)
    - Returns: MeetingBaas bot ID and client ID for WebSocket connections
 
-3. WebSocket endpoint (`/ws/{client_id}`):
-   - Real-time communication channel for audio streaming
-   - Binary audio data and control messages
+3. WebSocket endpoints:
+   - `/ws/{client_id}/output`: Meeting audio stream (meeting -> server)
+   - `/ws/{client_id}/input`: Bot audio stream (server -> meeting)
+   - Legacy `/ws/{client_id}` is deprecated
 4. Pipecat WebSocket endpoint (`/pipecat/{client_id}`):
    - Connection point for Pipecat services
    - Bidirectional conversion between raw audio and Protobuf frames
@@ -443,6 +444,14 @@ This is a normal occurrence and can be easily resolved with a quick bot respawn.
 ## Running the API Server
 
 ### Local Development
+
+Quick start (recommended):
+
+```powershell
+.\scripts\dev_up.ps1
+```
+
+This script starts ngrok, updates `BASE_URL` in `.env`, and launches the API server with basic health checks.
 
 ```bash
 # Install dependencies

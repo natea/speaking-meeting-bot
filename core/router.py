@@ -13,11 +13,56 @@ class MessageRouter:
         self.converter = converter
         self.logger = logger
         self.closing_clients = set()  # Track clients that are in the process of closing
+        self.audio_source = {}  # client_id -> "input" or "output"
 
     def mark_closing(self, client_id: str):
         """Mark a client as closing to prevent sending more data to it."""
         self.closing_clients.add(client_id)
         self.logger.debug(f"Marked client {client_id} as closing")
+
+    def set_audio_source(self, client_id: str, source: str):
+        """Track which endpoint is supplying meeting audio (input/output)."""
+        if source not in ["input", "output"]:
+            return
+        previous = self.audio_source.get(client_id)
+        if previous != source:
+            self.audio_source[client_id] = source
+            self.logger.info(
+                f"[AUDIO ROUTING] Set meeting audio source for {client_id[:8]} -> {source}"
+            )
+
+    def _get_outbound_client(self, client_id: str):
+        """Prefer INPUT socket for outbound audio; fallback to OUTPUT if missing."""
+        client = self.registry.get_client_input(client_id)
+        if client:
+            return client
+        return self.registry.get_client_output(client_id)
+
+    def _get_outbound_targets(self, client_id: str):
+        """Choose outbound targets based on observed meeting audio source."""
+        source = self.audio_source.get(client_id)
+        if source == "output":
+            primary = self.registry.get_client_input(client_id)
+            secondary = self.registry.get_client_output(client_id)
+            if primary:
+                return [primary]
+            return [c for c in [secondary] if c]
+        if source == "input":
+            primary = self.registry.get_client_output(client_id)
+            secondary = self.registry.get_client_input(client_id)
+            if primary:
+                return [primary]
+            return [c for c in [secondary] if c]
+
+        # Unknown source: send to both if both exist
+        targets = []
+        for candidate in [
+            self.registry.get_client_input(client_id),
+            self.registry.get_client_output(client_id),
+        ]:
+            if candidate and candidate not in targets:
+                targets.append(candidate)
+        return targets
 
     async def send_binary(self, message: bytes, client_id: str):
         """Send binary data to a client."""
@@ -25,7 +70,7 @@ class MessageRouter:
             self.logger.debug(f"Skipping send to closing client {client_id}")
             return
 
-        client = self.registry.get_client(client_id)
+        client = self._get_outbound_client(client_id)
         if client:
             try:
                 await client.send_bytes(message)
@@ -39,7 +84,7 @@ class MessageRouter:
             self.logger.debug(f"Skipping send_text to closing client {client_id}")
             return
 
-        client = self.registry.get_client(client_id)
+        client = self._get_outbound_client(client_id)
         if client:
             try:
                 await client.send_text(message)
@@ -51,11 +96,16 @@ class MessageRouter:
 
     async def broadcast(self, message: str):
         """Broadcast text message to all clients."""
-        for client_id, connection in self.registry.active_connections.items():
+        client_ids = set(self.registry.client_input_connections.keys()) | set(
+            self.registry.client_output_connections.keys()
+        )
+        for client_id in client_ids:
+            connection = self._get_outbound_client(client_id)
             if client_id not in self.closing_clients:
                 try:
-                    await connection.send_text(message)
-                    self.logger.debug(f"Broadcast text message to client {client_id}")
+                    if connection:
+                        await connection.send_text(message)
+                        self.logger.debug(f"Broadcast text message to client {client_id}")
                 except Exception as e:
                     self.logger.debug(f"Error broadcasting to client {client_id}: {e}")
 
@@ -69,6 +119,7 @@ class MessageRouter:
 
         pipecat = self.registry.get_pipecat(client_id)
         if pipecat:
+            self.logger.info(f"[AUDIO ROUTING] Forwarding {len(message)} bytes to Pipecat for {client_id[:8]}...")
             try:
                 serialized_frame = self.converter.raw_to_protobuf(message)
                 await pipecat.send_bytes(serialized_frame)
@@ -84,6 +135,8 @@ class MessageRouter:
                     self.mark_closing(client_id)
                 else:
                     self.logger.error(f"Error sending to Pipecat: {str(e)}")
+        else:
+            self.logger.warning(f"[AUDIO ROUTING] No Pipecat connection found for {client_id[:8]}...")
 
     async def send_from_pipecat(self, message: bytes, client_id: str):
         """Extract audio from Protobuf frame and send to client."""
@@ -93,12 +146,16 @@ class MessageRouter:
             )
             return
 
-        client = self.registry.get_client(client_id)
-        if client:
+        targets = self._get_outbound_targets(client_id)
+        if targets:
+            self.logger.info(
+                f"[AUDIO ROUTING] Received {len(message)} bytes from Pipecat for {client_id[:8]}..."
+            )
             try:
                 audio_data = self.converter.protobuf_to_raw(message)
                 if audio_data:
-                    await client.send_bytes(audio_data)
+                    for target in targets:
+                        await target.send_bytes(audio_data)
                     self.logger.debug(
                         f"Forwarded audio ({len(audio_data)} bytes) from Pipecat to client {client_id}"
                     )
@@ -111,6 +168,10 @@ class MessageRouter:
                     self.mark_closing(client_id)
                 else:
                     self.logger.error(f"Error processing Pipecat message: {str(e)}")
+        else:
+            self.logger.warning(
+                f"[AUDIO ROUTING] No client connection found for {client_id[:8]}..."
+            )
 
 
 # Create a singleton instance

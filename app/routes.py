@@ -433,14 +433,22 @@ async def leave_bot(
                 success = False
                 logger.error(f"Error closing Pipecat WebSocket: {e}")
 
-        # Then close client WebSocket if it exists
-        if client_id in registry.active_connections:
+        # Then close client WebSockets (output/input) if they exist
+        if registry.get_client_output(client_id):
             try:
-                await registry.disconnect(client_id, is_pipecat=False)
-                logger.info(f"Closed client WebSocket for client {client_id}")
+                await registry.disconnect(client_id, client_direction="output")
+                logger.info(f"Closed client OUTPUT WebSocket for client {client_id}")
             except Exception as e:
                 success = False
-                logger.error(f"Error closing client WebSocket: {e}")
+                logger.error(f"Error closing client OUTPUT WebSocket: {e}")
+
+        if registry.get_client_input(client_id):
+            try:
+                await registry.disconnect(client_id, client_direction="input")
+                logger.info(f"Closed client INPUT WebSocket for client {client_id}")
+            except Exception as e:
+                success = False
+                logger.error(f"Error closing client INPUT WebSocket: {e}")
 
         # Add a small delay to allow for clean disconnection
         await asyncio.sleep(0.5)

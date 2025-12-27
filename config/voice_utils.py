@@ -5,14 +5,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 import aiohttp
-from dotenv import load_dotenv
 from loguru import logger
 from openai import OpenAI
 
 from config.persona_utils import PersonaManager
 
-# Load environment variables
-load_dotenv()
+# Environment variables loaded centrally in app/__init__.py
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SUPPORTED_LANGUAGES = [
