@@ -117,9 +117,13 @@ async def main(
         enable_tools: Whether to enable function tools like weather and time
     """
     # Set TaskManager event loop FIRST, before any other pipecat operations
-    from pipecat.utils.asyncio import TaskManager
-    TaskManager.set_event_loop(TaskManager, asyncio.get_running_loop())
-    
+    # Note: TaskManager only exists in newer pipecat versions (>0.0.98)
+    try:
+        from pipecat.utils.asyncio import TaskManager
+        TaskManager.set_event_loop(TaskManager, asyncio.get_running_loop())
+    except ImportError:
+        pass  # TaskManager not available in this pipecat version
+
     log_and_flush(logging.INFO, f"[STARTUP] MeetingBaas bot launching with persona: {persona_name}")
     load_dotenv()
 

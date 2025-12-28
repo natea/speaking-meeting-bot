@@ -25,7 +25,7 @@ if os.path.exists(".local_dev_mode"):
         if f.read().strip().lower() == "true":
             LOCAL_DEV_MODE = True
             logger.info(
-                "🚀 Starting in LOCAL_DEV_MODE (detected from .local_dev_mode file)"
+                "[LOCAL_DEV] Starting in LOCAL_DEV_MODE (detected from .local_dev_mode file)"
             )
 
 # Get base URL from environment variable

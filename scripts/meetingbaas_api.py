@@ -119,13 +119,14 @@ def create_meeting_bot(
     if bot_image is not None:
         bot_image = str(bot_image)  # Ensure bot_image is a string
 
-    # Create the WebSocket path for streaming
-    websocket_with_path = f"{websocket_url}/ws/{bot_id}"
+    # Create distinct WebSocket paths for streaming
+    websocket_input = f"{websocket_url}/ws/{bot_id}/input"
+    websocket_output = f"{websocket_url}/ws/{bot_id}/output"
 
     # Create streaming config
     streaming = Streaming(
-        input=websocket_with_path,
-        output=websocket_with_path,
+        input=websocket_input,
+        output=websocket_output,
         audio_frequency=streaming_audio_frequency,
     )
 

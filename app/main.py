@@ -13,6 +13,13 @@ from fastapi.responses import JSONResponse
 
 from app.routes import router as app_router
 from app.websockets import websocket_router
+from config.validation import (
+    print_startup_summary,
+    run_startup_validation,
+    validate_api_connectivity,
+    validate_personas,
+    validate_port,
+)
 from meetingbaas_pipecat.utils.logger import configure_logger
 from utils.ngrok import LOCAL_DEV_MODE, NGROK_URL_INDEX, NGROK_URLS, load_ngrok_urls
 
@@ -27,8 +34,8 @@ pipecat_ws_logger.setLevel(logging.WARNING)
 
 async def api_key_middleware(request: Request, call_next):
     """Middleware to check for MeetingBaas API key in headers."""
-    # Skip API key check for docs and openapi endpoints
-    if request.url.path in ["/docs", "/openapi.json", "/redoc"]:
+    # Skip API key check for docs, openapi, and health endpoints
+    if request.url.path in ["/docs", "/openapi.json", "/redoc", "/health", "/health/detailed"]:
         return await call_next(request)
 
     api_key = request.headers.get("x-meeting-baas-api-key")
@@ -226,21 +233,60 @@ def create_app() -> FastAPI:
             ],
         }
 
+    @app.get("/health/detailed", tags=["system"])
+    async def health_detailed():
+        """
+        Detailed health check that validates API connectivity.
+
+        Returns status of all external services and configuration.
+        """
+        # Check API connectivity
+        api_status = await validate_api_connectivity()
+
+        # Check personas
+        personas_valid, persona_count, persona_names = validate_personas()
+
+        # Check ngrok (if in local dev mode)
+        ngrok_available = bool(NGROK_URLS) if LOCAL_DEV_MODE else True
+
+        checks = {
+            "personas_loaded": personas_valid,
+            "persona_count": persona_count,
+            "openai_api": api_status.get("openai", False),
+            "cartesia_api": api_status.get("cartesia", False),
+            "deepgram_api": api_status.get("deepgram", api_status.get("stt_provider", False)),
+            "ngrok_available": ngrok_available,
+        }
+
+        all_ok = all([
+            checks["personas_loaded"],
+            checks["openai_api"],
+            checks["cartesia_api"],
+            checks["deepgram_api"],
+            checks["ngrok_available"],
+        ])
+
+        return {
+            "status": "ok" if all_ok else "degraded",
+            "service": "speaking-meeting-bot",
+            "version": "1.0.0",
+            "checks": checks,
+            "message": None if all_ok else "Some services unavailable - check 'checks' for details",
+        }
+
     return app
 
 
 def start_server(host: str = "0.0.0.0", port: int = 7014, local_dev: bool = False):
     """Start the Uvicorn server for the FastAPI application."""
-    # If the PORT environment variable is set, use it; otherwise, use the default.
-    try:
-        server_port = int(os.getenv("PORT", str(port)))
-    except ValueError:
-        logger.error(
-            f"Invalid value for PORT environment variable: {os.getenv('PORT')}. "
-            f"Falling back to default port {port}."
-        )
-        server_port = port
-    logger.info(f"Starting server on {host}:{server_port}")
+    # Validate port
+    port_env = os.getenv("PORT", str(port))
+    server_port, port_error = validate_port(port_env, port)
+    if port_error:
+        logger.warning(port_error)
+
+    # Run startup validation (will exit if critical errors)
+    run_startup_validation(local_dev)
 
     # Global variables for ngrok URL tracking
     NGROK_URLS = []
@@ -253,23 +299,51 @@ def start_server(host: str = "0.0.0.0", port: int = 7014, local_dev: bool = Fals
     NGROK_URL_INDEX = 0
 
     if local_dev:
-        print("\n⚠️ Starting in local development mode")
         # Cache the ngrok URLs at server start
         NGROK_URLS = load_ngrok_urls()
 
-        if NGROK_URLS:
-            print(f"✅ {len(NGROK_URLS)} Bot(s) available from Ngrok")
-            for i, url in enumerate(NGROK_URLS):
-                print(f"  Bot {i + 1}: {url}")
-        else:
-            print(
-                "⚠️ No ngrok URLs configured. Using auto-detection for WebSocket URLs."
-            )
-        print("\n")
+        # Fail fast if ngrok not running in local dev mode
+        if not NGROK_URLS:
+            logger.error("=" * 50)
+            logger.error("STARTUP FAILED: ngrok not running")
+            logger.error("=" * 50)
+            logger.error("Local dev mode requires ngrok for WebSocket tunneling.")
+            logger.error("")
+            logger.error("To fix this:")
+            logger.error("  1. Run: ngrok start --all")
+            logger.error("  2. Or configure config/ngrok/config.yml")
+            logger.error("=" * 50)
+            sys.exit(1)
+
+    # Print startup summary
+    print_startup_summary(server_port, local_dev, NGROK_URLS)
 
     logger.info(f"Starting WebSocket server on {host}:{server_port}")
 
     # Pass the local_dev flag as a command-line argument to the uvicorn process
+    # #region agent log
+    log_path = r"c:\Users\kmond\meeting bot\speaking-meeting-bot\.cursor\debug.log"
+    import json as _json
+    import time as _time
+    try:
+        with open(log_path, "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "K",
+                "location": "app/main.py:build_args",
+                "message": "Building uvicorn command args",
+                "data": {
+                    "sys_executable": sys.executable,
+                    "cwd": os.getcwd(),
+                    "app_module_exists": os.path.exists("app/__init__.py")
+                },
+                "timestamp": int(_time.time() * 1000)
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
+    
     args = [
         sys.executable,
         "-m",
@@ -292,9 +366,44 @@ def start_server(host: str = "0.0.0.0", port: int = 7014, local_dev: bool = Fals
         if os.path.exists(".local_dev_mode"):
             os.remove(".local_dev_mode")
 
-    # Use os.execv to replace the current process with uvicorn
-    # This way all arguments are directly passed to uvicorn
-    os.execv(sys.executable, args)
+    # Import and run uvicorn directly instead of spawning a subprocess
+    # This avoids path resolution issues with os.execv on Windows
+    import uvicorn
+    
+    # #region agent log
+    log_path = r"c:\Users\kmond\meeting bot\speaking-meeting-bot\.cursor\debug.log"
+    import json as _json
+    import time as _time
+    try:
+        with open(log_path, "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "M",
+                "location": "app/main.py:start_uvicorn",
+                "message": "Starting uvicorn directly",
+                "data": {
+                    "host": host,
+                    "port": server_port,
+                    "local_dev": local_dev,
+                    "cwd": os.getcwd()
+                },
+                "timestamp": int(_time.time() * 1000)
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
+    
+    # Import the app
+    from app import app
+    
+    # Run uvicorn directly
+    uvicorn.run(
+        app,
+        host=host,
+        port=server_port,
+        reload=local_dev,
+    )
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import hmac
 import json
 import mimetypes
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -12,6 +13,15 @@ import requests
 from loguru import logger
 
 from config.persona_utils import persona_manager
+
+
+def safe_print(msg: str) -> None:
+    """Print message safely handling Unicode encoding issues."""
+    try:
+        print(msg, file=sys.stdout)
+    except UnicodeEncodeError:
+        # Fallback: encode to ASCII with error handling
+        print(msg.encode("ascii", errors="replace").decode("ascii"), file=sys.stdout)
 
 
 class UTFSUploader:
@@ -24,7 +34,7 @@ class UTFSUploader:
 
         # Configure logger levels
         logger.remove()
-        logger.add(lambda msg: print(msg), level="INFO")
+        logger.add(safe_print, level="INFO")
 
     def _load_existing_urls(self) -> dict:
         """Load existing image URLs from personas"""

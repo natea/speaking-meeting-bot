@@ -8,14 +8,11 @@ from io import BytesIO
 import os
 import replicate
 from pathlib import Path
-from dotenv import load_dotenv
 from config.image_uploader import UTFSUploader
 from config.prompts import IMAGE_NEGATIVE_PROMPT
 import asyncio
 
-
-# Load environment variables
-load_dotenv()
+# Environment variables loaded centrally in app/__init__.py
 
 class ImageService:
     """Service for handling image generation and processing."""

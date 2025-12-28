@@ -62,9 +62,10 @@ The project follows a streamlined API-first approach with:
    - The WebSocket URL is determined automatically (see WebSocket URL Resolution below)
    - Returns: MeetingBaas bot ID and client ID for WebSocket connections
 
-3. WebSocket endpoint (`/ws/{client_id}`):
-   - Real-time communication channel for audio streaming
-   - Binary audio data and control messages
+3. WebSocket endpoints:
+   - `/ws/{client_id}/output`: Meeting audio stream (meeting -> server)
+   - `/ws/{client_id}/input`: Bot audio stream (server -> meeting)
+   - Legacy `/ws/{client_id}` is deprecated
 4. Pipecat WebSocket endpoint (`/pipecat/{client_id}`):
    - Connection point for Pipecat services
    - Bidirectional conversion between raw audio and Protobuf frames
@@ -163,8 +164,14 @@ Each persona is defined in the `@personas` directory with:
 # Install Poetry (Unix/macOS)
 curl -sSL https://install.python-poetry.org | python3 -
 
-# Install Poetry (Windows)
+# Install Poetry (Windows PowerShell)
 (Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -
+```
+
+**Windows Note:** If `poetry` command is not found after installation, you can run commands directly using the virtual environment:
+```powershell
+# Instead of: poetry run python ...
+.\.venv\Scripts\python.exe ...
 ```
 
 ### 2. Install System Dependencies
@@ -180,6 +187,9 @@ sudo apt-get install llvm python3-dev cython
 
 # Fedora/RHEL
 sudo dnf install llvm-devel python3-devel Cython
+
+# Windows
+# No additional system dependencies required - Poetry will handle everything
 ```
 
 ### 3. Set up Project with Poetry
@@ -199,8 +209,20 @@ LLVM_CONFIG=$(brew --prefix llvm)/bin/llvm-config poetry install
 # On Linux (path may vary):
 # LLVM_CONFIG=/usr/bin/llvm-config poetry install
 
+# On Windows (PowerShell):
+# poetry install
+
 # Activate virtual environment
 poetry shell
+```
+
+**Windows Alternative (if poetry not in PATH):**
+```powershell
+# Install dependencies
+.\.venv\Scripts\python.exe -m pip install -e .
+
+# Or if you have a requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 ### 4. Compile Protocol Buffers
@@ -222,6 +244,35 @@ Example `.env` file:
 ```
 MEETING_BAAS_API_KEY=your_api_key_here
 BASE_URL=https://your-server-domain.com  # For production
+```
+
+## Quick Start (Windows)
+
+If you just want to get the bot running quickly on Windows:
+
+### 1. Start the Server
+```powershell
+# Option 1: Using poetry (if available)
+poetry run python app/main.py --port 7014 --local-dev
+
+# Option 2: Using venv directly (if poetry not in PATH)
+.\.venv\Scripts\python.exe -m uvicorn app:app --host 0.0.0.0 --port 7014
+```
+
+### 2. Start ngrok (separate terminal)
+```powershell
+ngrok start --all --config config\ngrok\config.yml
+```
+
+### 3. Update BASE_URL
+Copy the ngrok HTTPS URL from http://localhost:4040 and set it in your `.env`:
+```
+BASE_URL=https://xxxx.ngrok-free.app
+```
+
+### 4. Create a Bot
+```powershell
+curl -X POST "http://localhost:7014/bots" -H "Content-Type: application/json" -H "x-meeting-baas-api-key: YOUR_API_KEY" -d "{\"meeting_url\": \"https://meet.google.com/xxx-yyyy-zzz\", \"personas\": [\"1940s_noir_detective\"]}"
 ```
 
 ## Running Meeting Agents
@@ -341,6 +392,37 @@ The persona architecture is designed to support:
 
 ## Troubleshooting
 
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| `poetry` command not found | Use `.\.venv\Scripts\python.exe` directly (Windows) or `python3` (Linux/macOS) |
+| Server won't start | Check that port 7014 is not in use: `netstat -ano \| findstr :7014` |
+| Ngrok errors | Ensure your authtoken is configured: `ngrok config add-authtoken YOUR_TOKEN` |
+| Bot creation fails | Verify `BASE_URL` is set correctly and ngrok is running |
+| API key errors | Check your `.env` file has all required keys |
+| Bot joins but doesn't speak | Check server logs for `[Pipecat STDERR]` errors - see detailed troubleshooting below |
+| Old bots keep reconnecting | After server restart, old bots in meetings will fail. Remove them from MeetingBaas dashboard |
+
+### Bot Joins But Doesn't Respond to Voice
+
+If your bot joins the meeting successfully (entry_message appears in chat) but doesn't respond to voice:
+
+1. **Check server logs** for `[Pipecat STDOUT]` and `[Pipecat STDERR]` output
+2. **Verify environment variables** are set:
+   ```powershell
+   # Windows PowerShell
+   echo $env:OPENAI_API_KEY
+   echo $env:CARTESIA_API_KEY
+   echo $env:DEEPGRAM_API_KEY
+   ```
+3. **Common causes:**
+   - Missing API keys (OPENAI_API_KEY, CARTESIA_API_KEY, DEEPGRAM_API_KEY)
+   - Pipecat subprocess crashed on startup
+   - PYTHONPATH not set correctly for subprocess
+
+### General Checklist
+
 - Verify Poetry environment is activated
 - Check Ngrok connection status
 - Validate environment variables
@@ -362,6 +444,14 @@ This is a normal occurrence and can be easily resolved with a quick bot respawn.
 ## Running the API Server
 
 ### Local Development
+
+Quick start (recommended):
+
+```powershell
+.\scripts\dev_up.ps1
+```
+
+This script starts ngrok, updates `BASE_URL` in `.env`, and launches the API server with basic health checks.
 
 ```bash
 # Install dependencies

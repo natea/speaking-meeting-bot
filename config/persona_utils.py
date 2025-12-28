@@ -7,7 +7,6 @@ from typing import Dict, List, Optional, Union
 
 import aiohttp
 import markdown
-from dotenv import load_dotenv
 from loguru import logger
 
 from config.prompts import (
@@ -17,8 +16,7 @@ from config.prompts import (
     PERSONA_INTERACTION_INSTRUCTIONS,
 )
 
-# Load environment variables from .env file
-load_dotenv()
+# Environment variables loaded centrally in app/__init__.py
 
 
 class PersonaManager:

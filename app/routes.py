@@ -210,12 +210,14 @@ async def join_meeting(request: BotRequest, client_request: Request):
     logger.info(f"  Is Temporary: {resolved_persona_data.get('is_temporary')}")
 
     # Store all relevant details in MEETING_DETAILS dictionary
+    # Note: Index 5 stores the full resolved_persona_data for use by websocket handler
     MEETING_DETAILS[bot_client_id] = (
         request.meeting_url,
         resolved_persona_data.get("name", persona_name_for_logging),  # Use display name from resolved data
         None,  # meetingbaas_bot_id, will be set after creation
         request.enable_tools,
-        streaming_audio_frequency
+        streaming_audio_frequency,
+        resolved_persona_data,  # Full persona data for Pipecat subprocess
     )
 
     # Get image URL: Prioritize request.bot_image > persona_data.image > generate_image (if custom prompt and details derived)
@@ -431,14 +433,22 @@ async def leave_bot(
                 success = False
                 logger.error(f"Error closing Pipecat WebSocket: {e}")
 
-        # Then close client WebSocket if it exists
-        if client_id in registry.active_connections:
+        # Then close client WebSockets (output/input) if they exist
+        if registry.get_client_output(client_id):
             try:
-                await registry.disconnect(client_id, is_pipecat=False)
-                logger.info(f"Closed client WebSocket for client {client_id}")
+                await registry.disconnect(client_id, client_direction="output")
+                logger.info(f"Closed client OUTPUT WebSocket for client {client_id}")
             except Exception as e:
                 success = False
-                logger.error(f"Error closing client WebSocket: {e}")
+                logger.error(f"Error closing client OUTPUT WebSocket: {e}")
+
+        if registry.get_client_input(client_id):
+            try:
+                await registry.disconnect(client_id, client_direction="input")
+                logger.info(f"Closed client INPUT WebSocket for client {client_id}")
+            except Exception as e:
+                success = False
+                logger.error(f"Error closing client INPUT WebSocket: {e}")
 
         # Add a small delay to allow for clean disconnection
         await asyncio.sleep(0.5)
